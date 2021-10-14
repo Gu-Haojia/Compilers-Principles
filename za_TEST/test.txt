@@ -1,0 +1,13 @@
+#include <stdio.h>
+#include <iostream>
+
+
+int main()
+{
+	//abcde
+
+	char s2[] = "hello";
+	/*this is ce shi hgjghj */
+	std::cout<<s2;
+	return 0;
+}

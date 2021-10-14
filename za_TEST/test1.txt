@@ -1,0 +1,192 @@
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <sstream>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include "Camera.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+
+
+
+
+
+static ShaderProgramSource ParseShader(const std::string& filepath)  //返回结构体
+{
+    std::ifstream stream(filepath);
+    enum class Shadertype
+    {
+        NONE = -1, VERTEX = 0, FRAGMENT = 1
+    };
+
+    std::string line;
+    std::stringstream ss[2];
+    Shadertype type = Shadertype::NONE;
+
+    while (getline(stream, line))
+    {
+        if (line.find("#shader") != std::string::npos)
+        {
+            if (line.find("vertex") != std::string::npos)
+            {
+                //set mode to vertex
+                type = Shadertype::VERTEX;
+            }
+
+            else if (line.find("fragment") != std::string::npos)
+            {
+                //set mode to fragment
+                type = Shadertype::FRAGMENT;
+            }
+        }
+        else
+        {
+            // << 是赋值，将字符串放入ss中
+            ss[(int)type] << line << '\n';
+        }
+    }
+
+    return { ss[0].str(), ss[1].str() };
+}
+
+static unsigned int CompileShader(unsigned int type, const std::string& source, const std::string& filepath)
+{
+    unsigned int id = glCreateShader(type);
+    const char* src = source.c_str(); // src 指针指向source
+    glShaderSource(id, 1, &src, nullptr);
+    glCompileShader(id);
+
+    // 报错
+    int result;
+    glGetShaderiv(id, GL_COMPILE_STATUS, &result);
+    if (result == GL_FALSE)
+    {
+        int length;
+        glGetShaderiv(id, GL_INFO_LOG_LENGTH, &length);
+        char* message = (char*)alloca(length * sizeof(char)); //alloca 栈内存，不需要手动释放
+        glGetShaderInfoLog(id, length, &length, message);
+        std::cout << filepath << std::endl << "Failed To Compile " <<
+            (type == GL_VERTEX_SHADER ? "vertex" : "fragment") << " Shader! " << std::endl;
+        std::cout << message << std::endl;
+        glDeleteShader(id);
+        return 0;
+    }
+
+    return id;
+}
+
+static unsigned int CreatShader(const std::string& vertexShader, const std::string& fragmentShader, const std::string& filepath)
+{
+    unsigned int program = glCreateProgram();
+    unsigned int vs = CompileShader(GL_VERTEX_SHADER, vertexShader, filepath);
+    unsigned int fs = CompileShader(GL_FRAGMENT_SHADER, fragmentShader, filepath);
+
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    glLinkProgram(program);
+    glValidateProgram(program);
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+
+    return program;
+
+}
+
+#pragma endregion
+
+unsigned int LoadImage(const char* path, GLint internalFormat, GLenum format, int textureSlot)
+{
+    unsigned int TexBuffer;
+
+    glGenTextures(1, &TexBuffer);
+    glActiveTexture(GL_TEXTURE0 + textureSlot);
+    glBindTexture(GL_TEXTURE_2D, TexBuffer);
+    int w, h, nrChannel;
+    stbi_set_flip_vertically_on_load(true);
+    unsigned char* data = stbi_load(path, &w, &h, &nrChannel, 0);
+    if (data)
+    {
+        glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, w, h, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    else
+    {
+        printf("Load Image Failed ");
+    }
+    stbi_image_free(data);
+    return TexBuffer;
+}
+
+
+int main(void)
+{
+
+
+    GLFWwindow* window;
+    glfwInit();
+    window = glfwCreateWindow(680, 680, "MY OpneGL", NULL, NULL);
+    glfwMakeContextCurrent(window);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    glfwSetCursorPosCallback(window, mouse_callback);
+    glewInit();
+
+    unsigned int VAO[2];
+    unsigned int VBO[2];
+    glGenVertexArrays(2, VAO);
+    glGenBuffers(2, VBO);
+
+
+    glBindVertexArray(VAO[1]);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO[1]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 6, (void*)0);
+    glEnableVertexAttribArray(0);
+
+
+
+    ShaderProgramSource Source1 = ParseShader("res/Shader/PointLight.shader");
+    unsigned int lightshader = CreatShader(Source1.VertexSource, Source1.FragmentSource, "res/Shader/PointLight.shader");
+#pragma endregion
+
+#pragma region Matrix
+    glEnable(GL_DEPTH_TEST);
+
+
+    glm::mat4 modelMat;
+    glm::mat4 modelMat2;
+    glm::mat4 viewMat;
+    glm::mat4 projMat;
+    projMat = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
+#pragma endregion
+
+    while (!glfwWindowShouldClose(window))
+    {
+
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        processInput(window);
+
+
+        viewMat = camera.GetViewMatrix();
+        glm::vec3 lightPos = glm::vec3(2.0f * cos(glfwGetTime()), 2.0f * sin(glfwGetTime()), 2.0f);
+        modelMat = glm::translate(glm::mat4(1.0f), lightPos);
+        //modelMat2 = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 3.0f, 0.0f));
+
+
+        // Swap front and back buffers 
+        glfwSwapBuffers(window);
+
+        // Poll for and process events 
+        glfwPollEvents();
+        camera.UpdateCameraPosition();
+    }
+
+    glfwTerminate();
+    return 0;
+}
